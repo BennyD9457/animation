@@ -1,0 +1,11 @@
+# This file is used internally by FFMPEG.
+file 'file:C:/Users/Ben/OneDrive/Desktop/Anitmation/media/videos/introduction/480p15/partial_movie_files/CavitySineWave/1185818338_679050349_223132457.mp4'
+file 'file:C:/Users/Ben/OneDrive/Desktop/Anitmation/media/videos/introduction/480p15/partial_movie_files/CavitySineWave/624642324_778948452_1498930786.mp4'
+file 'file:C:/Users/Ben/OneDrive/Desktop/Anitmation/media/videos/introduction/480p15/partial_movie_files/CavitySineWave/624642324_1039154947_3110550208.mp4'
+file 'file:C:/Users/Ben/OneDrive/Desktop/Anitmation/media/videos/introduction/480p15/partial_movie_files/CavitySineWave/624642324_1197028233_1646412162.mp4'
+file 'file:C:/Users/Ben/OneDrive/Desktop/Anitmation/media/videos/introduction/480p15/partial_movie_files/CavitySineWave/624642324_2590671701_3083066059.mp4'
+file 'file:C:/Users/Ben/OneDrive/Desktop/Anitmation/media/videos/introduction/480p15/partial_movie_files/CavitySineWave/624642324_2372186727_3455672849.mp4'
+file 'file:C:/Users/Ben/OneDrive/Desktop/Anitmation/media/videos/introduction/480p15/partial_movie_files/CavitySineWave/624642324_4078090764_883119302.mp4'
+file 'file:C:/Users/Ben/OneDrive/Desktop/Anitmation/media/videos/introduction/480p15/partial_movie_files/CavitySineWave/624642324_1921837645_3742566508.mp4'
+file 'file:C:/Users/Ben/OneDrive/Desktop/Anitmation/media/videos/introduction/480p15/partial_movie_files/CavitySineWave/624642324_1733944848_4225839642.mp4'
+file 'file:C:/Users/Ben/OneDrive/Desktop/Anitmation/media/videos/introduction/480p15/partial_movie_files/CavitySineWave/624642324_1733944848_2698733197.mp4'

@@ -1,128 +1,63 @@
-import pygame
-import math
-pygame.init()
+from manim import *
+import numpy as np
 
-WIDTH, HEIGHT =  800, 800
-WIN = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Planet Simulation")
+class BouncingInBox(Scene):
+    def construct(self):
+        cavity = Square(side_length=4, color=ORANGE)
+        cavity.set_fill(WHITE, opacity=0.1)
 
-WHITE = (255, 255, 255)
-YELLOW = (255, 255, 0)
-BLUE = (100, 149, 237)
-RED = (188, 39, 50)
-DARK_GREY = (80, 78, 81)
+        rod = Rectangle(width=0.3, height=0.7, color=ORANGE)
+        rod.set_fill(WHITE, opacity=0.1)
+        rod.align_to(cavity, UP)
+        rod.shift(RIGHT * 0.2)
 
-FONT = pygame.font.SysFont("comicsans", 16)
+        self.add(cavity, rod)
 
-class Planet:
-	AU = 149.6e6 * 1000
-	G = 6.67428e-11
-	SCALE = 250 / AU  # 1AU = 100 pixels
-	TIMESTEP = 3600*24 # 1 day
+        for i in range(5):
+            wave = FunctionGraph(
+                lambda x: 1/4* np.sin(50 * x),
+                x_range=[-.25, .25, 0.001],
+                color=BLUE,
+                stroke_opacity=0.5,
+            )
+            wave.rotate(90 * DEGREES)
 
-	def __init__(self, x, y, radius, color, mass):
-		self.x = x
-		self.y = y
-		self.radius = radius
-		self.color = color
-		self.mass = mass
+            # Random starting position and velocity for each wave
+            state = {
+                "x": np.random.uniform(-0.8, 0.8),
+                "y": np.random.uniform(-0.8, 0.8),
+                "vx": np.random.uniform(-3, 3),
+                "vy": np.random.uniform(-3, 3),
+            }
+            wall = 1.0
 
-		self.orbit = []
-		self.sun = False
-		self.distance_to_sun = 0
+            def make_updater(s, w):
+                def update(mob, dt):
+                    s["x"] += s["vx"] * dt
+                    s["y"] += s["vy"] * dt
 
-		self.x_vel = 0
-		self.y_vel = 0
+                    if s["x"] >= wall:
+                        w.rotate(90 * DEGREES)
+                        s["x"] = wall
+                        s["vx"] *= -1
+                    elif s["x"] <= -wall:
+                        w.rotate(90 * DEGREES)
+                        s["x"] = -wall
+                        s["vx"] *= -1
 
-	def draw(self, win):
-		x = self.x * self.SCALE + WIDTH / 2
-		y = self.y * self.SCALE + HEIGHT / 2
+                    if s["y"] >= wall:
+                        w.rotate(90 * DEGREES)
+                        s["y"] = wall
+                        s["vy"] *= -1
+                    elif s["y"] <= -wall:
+                        w.rotate(90 * DEGREES)
+                        s["y"] = -wall
+                        s["vy"] *= -1
 
-		if len(self.orbit) > 2:
-			updated_points = []
-			for point in self.orbit:
-				x, y = point
-				x = x * self.SCALE + WIDTH / 2
-				y = y * self.SCALE + HEIGHT / 2
-				updated_points.append((x, y))
+                    mob.move_to([s["x"], s["y"], 0])
+                return update
 
-			pygame.draw.lines(win, self.color, False, updated_points, 2)
+            wave.add_updater(make_updater(state, wave))
+            self.add(wave)
 
-		pygame.draw.circle(win, self.color, (x, y), self.radius)
-		
-		if not self.sun:
-			distance_text = FONT.render(f"{round(self.distance_to_sun/1000, 1)}km", 1, WHITE)
-			win.blit(distance_text, (x - distance_text.get_width()/2, y - distance_text.get_height()/2))
-
-	def attraction(self, other):
-		other_x, other_y = other.x, other.y
-		distance_x = other_x - self.x
-		distance_y = other_y - self.y
-		distance = math.sqrt(distance_x ** 2 + distance_y ** 2)
-
-		if other.sun:
-			self.distance_to_sun = distance
-
-		force = self.G * self.mass * other.mass / distance**2
-		theta = math.atan2(distance_y, distance_x)
-		force_x = math.cos(theta) * force
-		force_y = math.sin(theta) * force
-		return force_x, force_y
-
-	def update_position(self, planets):
-		total_fx = total_fy = 0
-		for planet in planets:
-			if self == planet:
-				continue
-
-			fx, fy = self.attraction(planet)
-			total_fx += fx
-			total_fy += fy
-
-		self.x_vel += total_fx / self.mass * self.TIMESTEP
-		self.y_vel += total_fy / self.mass * self.TIMESTEP
-
-		self.x += self.x_vel * self.TIMESTEP
-		self.y += self.y_vel * self.TIMESTEP
-		self.orbit.append((self.x, self.y))
-
-
-def main():
-	run = True
-	clock = pygame.time.Clock()
-
-	sun = Planet(0, 0, 30, YELLOW, 1.98892 * 10**30)
-	sun.sun = True
-
-	earth = Planet(-1 * Planet.AU, 0, 16, BLUE, 5.9742 * 10**24)
-	earth.y_vel = 29.783 * 1000 
-
-	mars = Planet(-1.524 * Planet.AU, 0, 12, RED, 6.39 * 10**23)
-	mars.y_vel = 24.077 * 1000
-
-	mercury = Planet(0.387 * Planet.AU, 0, 8, DARK_GREY, 3.30 * 10**23)
-	mercury.y_vel = -47.4 * 1000
-
-	venus = Planet(0.723 * Planet.AU, 0, 14, WHITE, 4.8685 * 10**24)
-	venus.y_vel = -35.02 * 1000
-
-	planets = [sun, earth, mars, mercury, venus]
-
-	while run:
-		clock.tick(60)
-		WIN.fill((0, 0, 0))
-
-		for event in pygame.event.get():
-			if event.type == pygame.QUIT:
-				run = False
-
-		for planet in planets:
-			planet.update_position(planets)
-			planet.draw(WIN)
-
-		pygame.display.update()
-
-	pygame.quit()
-
-
-main()
+        self.wait(10)

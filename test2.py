@@ -113,8 +113,8 @@ class CavitySineWave(Scene):
 
         self.play(Create(highlights), run_time=1.5)
 
-        callout = Text("← Mode lives here!", font_size=24, color=GREEN)
-        callout.next_to(highlights, RIGHT, buff=0.3)
+        callout = Text("← Mode lives here!", font_size=24, color=GREEN,)
+        callout.next_to(highlights, RIGHT *1, buff=0.3)
         self.play(FadeIn(callout))
         self.wait(2)
 
@@ -127,14 +127,4 @@ class CavitySineWave(Scene):
         self.play(
             Transform(title, Text("The Real Mode Map", font_size=42).to_edge(UP)),
         )
-
-        # Placeholder for your actual mode map image
-        # Replace "mode_map.png" with your real file
-        placeholder = Text(
-            "[ Insert your mode map image here ]\n"
-            "e.g. ImageMobject('mode_map.png')",
-            font_size=22, color=GREY_B,
-        )
-        placeholder.move_to(cavity.get_center())
-        self.play(FadeIn(placeholder))
-        self.wait(3)
+    
