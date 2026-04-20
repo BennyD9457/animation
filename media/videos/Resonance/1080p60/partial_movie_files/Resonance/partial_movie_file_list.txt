@@ -1,0 +1,5 @@
+# This file is used internally by FFMPEG.
+file 'file:/Users/bendonis/animation/animation/media/videos/Resonance/1080p60/partial_movie_files/Resonance/3544663784_2904649691_223132457.mp4'
+file 'file:/Users/bendonis/animation/animation/media/videos/Resonance/1080p60/partial_movie_files/Resonance/260329756_3988953151_1890469598.mp4'
+file 'file:/Users/bendonis/animation/animation/media/videos/Resonance/1080p60/partial_movie_files/Resonance/260329756_3656396293_3162837619.mp4'
+file 'file:/Users/bendonis/animation/animation/media/videos/Resonance/1080p60/partial_movie_files/Resonance/260329756_1432596116_4047742568.mp4'
