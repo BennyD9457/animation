@@ -1,140 +1,485 @@
+
 from manim import *
 import numpy as np
+import time
 
-class CavitySineWave(Scene):
-    def construct(self):
-        title = Text("How Cavity Modes Form", font_size=48)
-        title.to_edge(UP)
-        self.play(Write(title))
 
-        # ── Wire → Cavity transition (your original idea) ───────────
-        wire = Line(start=UP * 2, end=DOWN * 2, color=ORANGE, stroke_width=3)
-        self.play(Create(wire))
+class Resonance(Scene):
+
+    # ══════════════════════════════════════════════════════════════
+    #  TRACE HELPERS
+    # ══════════════════════════════════════════════════════════════
+
+    def _make_noisy_trace(self, y_center, x_left, x_right,
+                          baseline=0.0,
+                          amplitude=0.05, freq=30, noise=0.05,
+                          n_points=300, seed=0):
+        rng = np.random.default_rng(seed)
+        xs = np.linspace(x_left, x_right, n_points)
+        ys = (y_center + baseline
+              + amplitude * np.sin(freq * (xs - x_left))
+              + noise * rng.standard_normal(n_points))
+        return [np.array([x, y, 0]) for x, y in zip(xs, ys)]
+
+    def _make_lorentzian_trace(self, y_center, x_left, x_right,
+                               peak_x,
+                               baseline=0.0,
+                               peak_sign=+1,
+                               peak_height=0.6, hwhm=0.15,
+                               noise=0.015, n_points=400, seed=0):
+        """
+        peak_height = 0  →  flat baseline (no resonance feature)
+        peak_sign   = +1 →  upward peak (S21 transmission)
+        peak_sign   = -1 →  downward dip (S11 reflection)
+        """
+        rng = np.random.default_rng(seed)
+        xs = np.linspace(x_left, x_right, n_points)
+        lorentz = peak_sign * peak_height * (hwhm ** 2) / ((xs - peak_x) ** 2 + hwhm ** 2)
+        ys = y_center + baseline + lorentz + noise * rng.standard_normal(n_points)
+        return [np.array([x, y, 0]) for x, y in zip(xs, ys)]
+
+    # ══════════════════════════════════════════════════════════════
+    #  PORT CONFIG — change S11/S21 visuals from one place
+    # ══════════════════════════════════════════════════════════════
+    S11_BASELINE  = +0.5
+    S21_BASELINE  = -0.5
+    S11_PEAK_SIGN = -1
+    S21_PEAK_SIGN = +1
+    PEAK_HEIGHT_MAX = 0.55     # default "full" peak/dip amplitude
+
+    # ══════════════════════════════════════════════════════════════
+    #  GENERAL HELPERS
+    # ══════════════════════════════════════════════════════════════
+
+    def _make_pulse(self, color=WHITE, radius=0.12):
+        inner = Dot(radius=radius, color=color, fill_opacity=1)
+        outer = Dot(radius=radius * 2, color=color, fill_opacity=0.25)
+        return VGroup(outer, inner)
+
+    def _polyline(self, points, color, stroke_width=4):
+        m = VMobject(stroke_width=stroke_width, color=color)
+        m.set_points_as_corners([np.array([p[0], p[1], 0]) for p in points])
+        return m
+
+    # ══════════════════════════════════════════════════════════════
+    #  SINGLE TRACE FACTORY  ←  was two functions before
+    # ══════════════════════════════════════════════════════════════
+
+    def _new_trace_at(self, port, peak_x, amplitude):
+        """
+        Build a trace for the named port with a Lorentzian feature.
+            port:      'S11' or 'S21'
+            peak_x:    x-position of the peak/dip in scene coords
+            amplitude: peak height (0 = flat trace, no feature)
+        """
+        if port == "S21":
+            y_center  = self.trace_y_bot
+            baseline  = self.S21_BASELINE
+            peak_sign = self.S21_PEAK_SIGN
+            color, seed = BLUE, 2
+        elif port == "S11":
+            y_center  = self.trace_y_top
+            baseline  = self.S11_BASELINE
+            peak_sign = self.S11_PEAK_SIGN
+            color, seed = YELLOW, 1
+        else:
+            raise ValueError(f"unknown port {port!r}")
+
+        new = VMobject(stroke_width=2, color=color)
+        new.set_points_as_corners(
+            self._make_lorentzian_trace(
+                y_center, self.trace_x_left, self.trace_x_right,
+                peak_x=peak_x,
+                baseline=baseline,
+                peak_sign=peak_sign,
+                peak_height=amplitude, hwhm=0.12, seed=seed,
+            )
+        )
+        return new
+
+    # ══════════════════════════════════════════════════════════════
+    #  BUILD
+    # ══════════════════════════════════════════════════════════════
+
+    def _build(self):
+        self.title = Text("Set Up", font_size=48, color=WHITE).to_edge(UP)
+
+        # ── VNA ───────────────────────────────────────────────
+        self.vna = Rectangle(width=4, height=4, stroke_width=8, color=WHITE)
+        self.vna.shift(LEFT * 3 + DOWN * 0.8)
+        self.vna_label = Text("VNA", font_size=24).next_to(self.vna, UP, buff=0.1)
+
+        self.center_line = Line(
+            self.vna.get_left(), self.vna.get_right(),
+            stroke_width=4, color=WHITE,
+        )
+        self.s11_label = Text("S11", font_size=15, color=BLUE)\
+            .next_to(self.center_line, UP, buff=0.05).shift(LEFT * 0.9)
+        self.s21_label = Text("S21", font_size=15, color=BLUE)\
+            .next_to(self.center_line, DOWN, buff=0.05).shift(LEFT * 0.9)
+
+        # ── Cavity ────────────────────────────────────────────
+        self.cavity = Rectangle(width=2, height=5, stroke_width=8, color=ORANGE)
+        self.cavity.shift(RIGHT * 3 + DOWN * 0.5)
+        self.cavity_label = Text("Cavity", font_size=24, color=ORANGE)\
+            .next_to(self.cavity, UP, buff=0.1).shift(RIGHT *.4)
+            
+        # ── Tuning rod ────────────────────────────────────────
+        self.rod_height_full = 4.5
+        self.rod = Rectangle(
+            width=0.18, height=0.4,
+            stroke_width=2, color=GRAY_B,
+        )
+        self.rod.set_fill(GRAY_B, opacity=1)
+        cav_bottom_y = self.cavity.get_bottom()[1]
+        rod_x = self.cavity.get_center()[0] + 0.3
+        self.rod.move_to([rod_x, cav_bottom_y + self.rod.height / 2, 0])
+        self.rod_label = Text("Tuning Rod", font_size=18, color=GRAY_B)\
+            .next_to(self.cavity, DOWN, buff=0.2)
+
+        # ── Cable routing ─────────────────────────────────────
+        vna_right_x  = self.vna.get_right()[0]
+        cavity_top_y = self.cavity.get_top()[1]
+        rise_y = cavity_top_y + 0.2
+
+        s1_exit_y = self.vna.get_center()[1] + 0.5
+        s1_cav_x  = self.cavity.get_center()[0] - 0.4
+        s1_rise   = rise_y + 0.1
+        self.s1_start = np.array([vna_right_x, s1_exit_y, 0])
+        self.s1_end   = np.array([s1_cav_x, cavity_top_y, 0])
+        s1_pts = [
+            self.s1_start,
+            (vna_right_x + 0.3, s1_exit_y),
+            (vna_right_x + 0.3, s1_rise),
+            (s1_cav_x, s1_rise),
+            self.s1_end,
+        ]
+        self.s1 = self._polyline(s1_pts, color=YELLOW)
+        self.s1_label = Text("S1", font_size=20, color=YELLOW)\
+            .move_to([(vna_right_x + 0.3 + s1_cav_x) / 2, s1_rise + 0.3, 0])
+
+        s2_exit_y = self.vna.get_center()[1] - 0.5
+        s2_cav_x  = self.cavity.get_center()[0] + 0.4
+        s2_rise   = rise_y - 0.07
+        self.s2_start = np.array([vna_right_x, s2_exit_y, 0])
+        self.s2_end   = np.array([s2_cav_x, cavity_top_y, 0])
+        s2_pts = [
+            self.s2_start,
+            (vna_right_x + 0.7, s2_exit_y),
+            (vna_right_x + 0.7, s2_rise),
+            (s2_cav_x, s2_rise),
+            self.s2_end,
+        ]
+        self.s2 = self._polyline(s2_pts, color=BLUE)
+        self.s2_label = Text("S2", font_size=20, color=BLUE)\
+            .move_to([(vna_right_x + 0.7 + s2_cav_x) / 2, s2_rise - 0.3, 0])
+
+        self.s1_return = self._polyline(list(reversed(s1_pts)), color=YELLOW)
+        self.s2_return = self._polyline(list(reversed(s2_pts)), color=BLUE)
+
+        # ── VNA traces (initial: dead/wavy, no peaks) ─────────
+        self.trace_x_left  = self.vna.get_left()[0] + 0.15
+        self.trace_x_right = self.vna.get_right()[0] - 0.15
+        self.trace_y_top = (self.center_line.get_center()[1] + self.vna.get_top()[1]) / 2
+        self.trace_y_bot = (self.center_line.get_center()[1] + self.vna.get_bottom()[1]) / 2
+
+        self.s11_trace = VMobject(stroke_width=2, color=YELLOW)
+        self.s11_trace.set_points_as_corners(
+            self._make_noisy_trace(
+                self.trace_y_top, self.trace_x_left, self.trace_x_right,
+                baseline=self.S11_BASELINE, seed=1,
+            )
+        )
+        self.s21_trace = VMobject(stroke_width=2, color=BLUE)
+        self.s21_trace.set_points_as_corners(
+            self._make_noisy_trace(
+                self.trace_y_bot, self.trace_x_left, self.trace_x_right,
+                baseline=self.S21_BASELINE, seed=2,
+            )
+        )
+
+        # Default peak position used by section_on_resonance
+        self.s21_peak_x_min = self.trace_x_left + 0.4
+        self.s21_peak_x_max = self.trace_x_right - 0.4
+        self.peak_x = self.s21_peak_x_min
+
+        # ── Pulses ────────────────────────────────────────────
+        self.pulse_off = self._make_pulse(color=YELLOW)
+        self.pulse_on  = self._make_pulse(color=YELLOW)
+
+        # ── Captions ──────────────────────────────────────────
+        self.caption_off = Text(
+            "Off resonance: signal reflects back",
+            font_size=24, color=WHITE,
+        ).to_edge(UP)
+        self.caption_on = Text(
+            "On resonance: signal passes through to S2",
+            font_size=24, color=WHITE,
+        ).to_edge(UP)
+        self.caption_scan = Text(
+            "How does moving the tuning rod effect Resonance?",
+            font_size=24, color=WHITE,
+        ).to_edge(UP)
+        self.what_IDID = Text(
+            "The Script I Helped Write",
+            font_size=24, color=WHITE,
+        ).to_edge(UP)
+
+    # ══════════════════════════════════════════════════════════════
+    #  SECTIONS
+    # ══════════════════════════════════════════════════════════════
+
+    def section_setup(self):
+        self.play(Write(self.title))
+        self.play(
+            Create(self.vna), Create(self.cavity), Create(self.center_line),
+            Write(self.vna_label), Write(self.cavity_label),
+            Write(self.s11_label), Write(self.s21_label),
+            run_time=2,
+        )
+        self.play(
+            Create(self.s1), Write(self.s1_label),
+            Create(self.s2), Write(self.s2_label),
+            run_time=2,
+        )
+        # self.play(Create(self.s11_trace), Create(self.s21_trace), run_time=1.5)
+    def _set_s21_trace(self, peak_x, amplitude, run_time=0.6):
+        """Morph just the S21 trace (when S11 is hidden)."""
+        s21_target = self._new_trace_at("S21", peak_x, amplitude)
+        self.peak_x = peak_x
+        self.play(
+            Transform(self.s21_trace, s21_target),
+            run_time=run_time,
+        )
+    def change_Scene(self):
+        self.play(
+        FadeOut(self.s1),
+        FadeOut(self.s1_label),
+        FadeOut(self.s11_label),
+        FadeOut(self.s11_trace),
+        self.center_line.animate.align_to(self.vna, UP),
+        self.s21_label.animate.align_to(self.vna, UP).shift(DOWN * 0.2+ LEFT * .5),
+        # self.s21_trace.animate.move_to(self.vna),
+        )
+        self._set_s21_trace(self.peak_x, amplitude=2.5)
+        self.wait(3)
+        self._set_s21_trace(self.peak_x, amplitude=0)
+
+
+
+    def section_off_resonance(self):
+        # self.play(Write(self.caption_off))
+        self.play(Transform(self.title, self.caption_off))
+        self.pulse_off.move_to(self.s1_start)
+        self.add(self.pulse_off)
+
+        self.play(MoveAlongPath(self.pulse_off, self.s1),
+                  run_time=1.2, rate_func=linear)
+        self.play(Flash(self.s1_end, color=ORANGE,
+                        flash_radius=0.3, num_lines=12), run_time=0.4)
+        self.play(MoveAlongPath(self.pulse_off, self.s1_return),
+                  run_time=1.2, rate_func=linear)
+
+        self.remove(self.pulse_off)
+        self.play(Create(self.s11_trace), Create(self.s21_trace), run_time=1.5)
+        self.wait(0.5)
         self.wait(0.5)
 
-        cavity = Rectangle(width=5, height=4, stroke_width=8, color=ORANGE)
-        cavity.shift(LEFT * 4 + DOWN * 0.3)
-        self.play(Transform(wire, cavity), run_time=2)
+    def section_on_resonance(self):
+        self.play(Transform(self.title, self.caption_on))
+        self.pulse_on.move_to(self.s1_start)
+        self.add(self.pulse_on)
 
-        conductor_label = Text("Conducting Cavity Wall", font_size=20, color=ORANGE)
-        conductor_label.next_to(cavity, DOWN, buff=0.2)
-        self.play(FadeIn(conductor_label))
+        self.play(MoveAlongPath(self.pulse_on, self.s1),
+                  run_time=1.2, rate_func=linear)
         self.wait(1)
-        self.play(FadeOut(conductor_label))
+        self.play(
+            self.cavity.animate.set_stroke(color=YELLOW, width=12),
+            run_time=0.1,
+        )
+        self.play(self.pulse_on.animate.scale(1.5), run_time=0.3)
+        self.play(self.pulse_on.animate.scale(1 / 1.5), run_time=0.3)
 
-        # ── Slide 1: Random CIRCLES (representing E-field) ──────────
-        self.play(Transform(title, Text("Electric Field (random)", font_size=36).to_edge(UP)))
-
-        e_dots = VGroup()
-        # store random sizes so we can reference them later
-        e_sizes = {}
-        for x in np.linspace(-2, 2, 7):
-            for y in np.linspace(-1.6, 1.6, 7):
-                rand_size = np.random.uniform(0.03, 0.18)
-                pos = cavity.get_center() + np.array([x, y, 0])
-                dot = Dot(point=pos, radius=rand_size, color=TEAL_B)
-                e_dots.add(dot)
-                e_sizes[(x, y)] = rand_size
-
-        self.play(FadeIn(e_dots, lag_ratio=0.02), run_time=2)
-        self.wait(1.5)
-
-        # ── Slide 2: Random ARROWS (representing B-field) ───────────
-        # Shift cavity copy to the right for side-by-side
-        cavity2 = Rectangle(width=5, height=4, stroke_width=8, color=ORANGE)
-        cavity2.shift(RIGHT * 3 + DOWN * 0.3)
+        self.pulse_on.move_to(self.s2_end)
+        self.play(MoveAlongPath(self.pulse_on, self.s2_return),
+                  run_time=1.2, rate_func=linear)
+        self.remove(self.pulse_on)
 
         self.play(
-            Transform(title, Text("Magnetic Field (random)", font_size=36).to_edge(UP)),
-            Create(cavity2),
-            run_time=1.5,
+            self.cavity.animate.set_stroke(color=ORANGE, width=8),
+            run_time=0.4,
         )
 
-        b_arrows = VGroup()
-        b_sizes = {}
-        for x in np.linspace(-2, 2, 7):
-            for y in np.linspace(-1.6, 1.6, 7):
-                rand_len = np.random.uniform(0.1, 0.45)
-                pos = cavity2.get_center() + np.array([x, y, 0])
-                arr = Arrow(
-                    start=pos,
-                    end=pos + UP * rand_len,
-                    buff=0, color=YELLOW, stroke_width=1.5,
-                    max_tip_length_to_length_ratio=0.5,
-                )
-                b_arrows.add(arr)
-                b_sizes[(x, y)] = rand_len
-
-        self.play(FadeIn(b_arrows, lag_ratio=0.02), run_time=2)
-        self.wait(1.5)
-
-        # ── Slide 3: COMBINE — move both into one cavity ────────────
+        # Resonance feature appears on both traces.
+        s21_peaked = self._new_trace_at("S21", self.peak_x, amplitude=self.PEAK_HEIGHT_MAX)
+        s11_dipped = self._new_trace_at("S11", self.peak_x, amplitude=self.PEAK_HEIGHT_MAX)
         self.play(
-            Transform(title, Text("Combined: Where are both strongest?", font_size=34).to_edge(UP)),
+            Transform(self.s21_trace, s21_peaked),
+            Transform(self.s11_trace, s11_dipped),
+            run_time=1.2,
         )
+        self.wait(10)
 
-        # fade out the second cavity box, move arrows into first cavity
-        shift_vec = cavity.get_center() - cavity2.get_center()
+    # ══════════════════════════════════════════════════════════════
+    #  SCAN PRIMITIVES — small, composable, do one thing
+    # ══════════════════════════════════════════════════════════════
+
+    def _move_rod_to(self, frac, run_time=0.3):
+        """Move the rod to fractional insertion `frac` (0 = bottom, 1 = full)."""
+        cav_bottom_y = self.cavity.get_bottom()[1]
+        # new_height = 0.4 + #frac * (self.rod_height_full - 0.4)
+        new_height = .4 + frac * (self.rod_height_full - 4 )
+        new_center = [self.rod.get_center()[0],
+                      cav_bottom_y + new_height / 2, 0]
+        rod_target = self.rod.copy()
+        rod_target.stretch_to_fit_height(new_height)
+        rod_target.move_to(new_center)
+        self.play(Transform(self.rod, rod_target), run_time=run_time)
+
+    def _send_scan_pulse_and_update(self, s11_target, s21_target,
+                                    s1_time=0.35, s2_time=0.45):
+        """Pulse VNA → cavity → S2 → VNA. Traces morph during the return."""
+        pulse = self._make_pulse(color=YELLOW)
+        pulse.move_to(self.s1_start)
+        self.add(pulse)
+
+        self.play(MoveAlongPath(pulse, self.s1),
+                  run_time=s1_time, rate_func=linear)
+        self.play(self.cavity.animate.set_stroke(color=YELLOW, width=12),
+                  run_time=0.08)
         self.play(
-            FadeOut(cavity2),
-            b_arrows.animate.shift(shift_vec),
-            run_time=1.5,
+            MoveAlongPath(pulse, self.s2_return),
+            Transform(self.s21_trace, s21_target),
+            Transform(self.s11_trace, s11_target),
+            run_time=s2_time, rate_func=linear,
         )
-        self.wait(1)
+        self.play(self.cavity.animate.set_stroke(color=ORANGE, width=8),
+                  run_time=0.08)
+        self.remove(pulse)
 
-        # ── Highlight the spots where BOTH are biggest ──────────────
-        highlights = VGroup()
-        threshold_e = 0.12   # only big dots
-        threshold_b = 0.30   # only big arrows
+    def _measure_at(self, peak_x, amplitude):
+        """Take a measurement: send pulse, update both traces with new peak state."""
+        s21_target = self._new_trace_at("S21", peak_x, amplitude)
+        s11_target = self._new_trace_at("S11", peak_x, amplitude)
+        self.peak_x = peak_x
+        self._send_scan_pulse_and_update(s11_target, s21_target)
 
-        for x in np.linspace(-2, 2, 7):
-            for y in np.linspace(-1.6, 1.6, 7):
-                es = e_sizes.get((x, y), 0)
-                bs = b_sizes.get((x, y), 0)
-                if es > threshold_e and bs > threshold_b:
-                    pos = cavity.get_center() + np.array([x, y, 0])
-                    ring = Circle(radius=0.3, color=GREEN, stroke_width=3)
-                    ring.move_to(pos)
-                    highlights.add(ring)
+    def _scan_step(self, rod_frac, peak_x, amplitude):
+        """One step: move rod, then measure."""
+        self._move_rod_to(rod_frac)
+        self._measure_at(peak_x, amplitude)
 
-        # if no spots pass both thresholds, just highlight the biggest combo
-        if len(highlights) == 0:
-            best_score = 0
-            best_pos = cavity.get_center()
-            for x in np.linspace(-2, 2, 7):
-                for y in np.linspace(-1.6, 1.6, 7):
-                    score = e_sizes.get((x, y), 0) + b_sizes.get((x, y), 0)
-                    if score > best_score:
-                        best_score = score
-                        best_pos = cavity.get_center() + np.array([x, y, 0])
-            ring = Circle(radius=0.3, color=GREEN, stroke_width=3)
-            ring.move_to(best_pos)
-            highlights.add(ring)
+    # ══════════════════════════════════════════════════════════════
+    #  ROD SCAN — driven by an editable plan
+    # ══════════════════════════════════════════════════════════════
 
-        self.play(Create(highlights), run_time=1.5)
-
-        callout = Text("← Mode lives here!", font_size=24, color=GREEN)
-        callout.next_to(highlights, RIGHT, buff=0.3)
-        self.play(FadeIn(callout))
-        self.wait(2)
-
-        # ── Slide 4: Transition to real mode map ────────────────────
+    def section_rod_scan(self):
         self.play(
-            FadeOut(e_dots), FadeOut(b_arrows), FadeOut(highlights),
-            FadeOut(callout), FadeOut(cavity2),
-            run_time=1,
+            Transform(self.title, self.caption_scan),
+            FadeIn(self.rod),
+            Write(self.rod_label),
+            run_time=1.0,
         )
+        self.wait(0.3)
+
+        x1 = self.peak_x
+        x2 = x1 + 1
+
+        scan_plan = [
+            # rod_frac, peak_x, amplitude
+            (1.00,  x2, 0.55),
+        ]
+
+        # ── First scan: just show the peak shifting ──
+        for rod_frac, peak_x, amplitude in scan_plan:
+            self._scan_step(rod_frac, peak_x, amplitude)
+            self.wait(0.15)
+
+        # Target pixel on the mode map (0.2 x 0.2, solid green)
+   
+
+    def section_axion_detection(self):
+        # ── 1. Setup parameters ──
+        cavity_right_x = self.cavity.get_right()[0]
+        cavity_y       = self.cavity.get_center()[1]
+
+        wave_start_x = 7.5             # off-screen right
+        wave_end_x   = cavity_right_x  # stops at cavity wall
+        wave_length  = 2.5             # visible length of the wavelet
+
+
+        def make_axion_wave(head_x):
+            """Wavy line whose leading edge is at head_x, trailing off to the right."""
+            xs = np.linspace(head_x, head_x + wave_length, 80)
+            ys = cavity_y + 0.25 * np.sin(8 * (xs - head_x))
+            # taper amplitude so the tail fades into nothing
+            taper = np.linspace(1.0, 0.0, len(xs))
+            ys = cavity_y + (ys - cavity_y) * taper
+            pts = [np.array([x, y, 0]) for x, y in zip(xs, ys)]
+            m = VMobject(stroke_width=3, color=PURPLE_A)
+            m.set_points_as_corners(pts)
+            return m
+
+        # ── 2. Create wave and label ──
+        axion_wave = make_axion_wave(wave_start_x)
+        axion_label = Text("axion", font_size=20, color=PURPLE_A)
+        axion_label.next_to(axion_wave, UP, buff=0.15)
+
+        # Animate them appearing instead of silently adding
+        self.add(axion_wave, axion_label)
+
+        n_frames = 30
+        for i in range(1, n_frames + 1):
+            head_x = wave_start_x + (wave_end_x - wave_start_x) * (i / n_frames)
+            new_wave = make_axion_wave(head_x)
+            self.play(
+                Transform(axion_wave, new_wave),
+                axion_label.animate.move_to(
+                    [head_x + wave_length / 2, cavity_y + 0.55, 0]
+                ),
+                run_time=0.04, rate_func=linear,
+            )
+
+        # ── 3. Conversion flash inside the cavity ──
+        self.play(FadeOut(axion_wave), FadeOut(axion_label), run_time=0.15)
+
+        flash = Dot(
+            point=self.cavity.get_center(),
+            radius=0.05, color=YELLOW, fill_opacity=1,
+        )
+        self.add(flash)
+        flash_big = flash.copy().scale(15).set_opacity(0.0)
         self.play(
-            Transform(title, Text("The Real Mode Map", font_size=42).to_edge(UP)),
+            Transform(flash, flash_big),
+            self.cavity.animate.set_stroke(color=YELLOW, width=14),
+            run_time=0.6,
+        )
+        self.remove(flash)
+        self.play(
+            self.cavity.animate.set_stroke(color=ORANGE, width=8),
+            run_time=0.3,
         )
 
-        # Placeholder for your actual mode map image
-        # Replace "mode_map.png" with your real file
-        placeholder = Text(
-            "[ Insert your mode map image here ]\n"
-            "e.g. ImageMobject('mode_map.png')",
-            font_size=22, color=GREY_B,
-        )
-        placeholder.move_to(cavity.get_center())
-        self.play(FadeIn(placeholder))
-        self.wait(3)
+        # ── 4. Photon travels back through S2 to the VNA ──
+        photon = self._make_pulse(color=YELLOW)
+        photon.move_to(self.s2_end)        # at cavity end of S2
+        self.add(photon)
+        self.play(
+            MoveAlongPath(photon, self.s2_return),
+            run_time=0.9,
+         )
+        self.remove(photon)
+
+        self._set_s21_trace(self.peak_x, amplitude=2.5)
+    # ══════════════════════════════════════════════════════════════
+    def construct(self):
+        self._build()
+        self.section_setup()
+        self.section_rod_scan()
+        self.wait(5)
+        self.change_Scene()
+        self.wait(8)
+        self.section_axion_detection()
+        self._set_s21_trace(self.peak_x, amplitude=.1)
+        
+        

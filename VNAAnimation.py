@@ -1,5 +1,6 @@
 from manim import *
 import numpy as np
+import time
 
 
 class Resonance(Scene):
@@ -120,8 +121,8 @@ class Resonance(Scene):
         self.cavity = Rectangle(width=2, height=5, stroke_width=8, color=ORANGE)
         self.cavity.shift(RIGHT * 3 + DOWN * 0.5)
         self.cavity_label = Text("Cavity", font_size=24, color=ORANGE)\
-            .next_to(self.cavity, UP, buff=0.1)
-
+            .next_to(self.cavity, UP, buff=0.1).shift(RIGHT *.4)
+            
         # ── Tuning rod ────────────────────────────────────────
         self.rod_height_full = 4.5
         self.rod = Rectangle(
@@ -209,15 +210,19 @@ class Resonance(Scene):
         self.caption_off = Text(
             "Off resonance: signal reflects back",
             font_size=24, color=WHITE,
-        ).to_edge(DOWN)
+        ).to_edge(UP)
         self.caption_on = Text(
             "On resonance: signal passes through to S2",
-            font_size=24, color=ORANGE,
-        ).to_edge(DOWN)
+            font_size=24, color=WHITE,
+        ).to_edge(UP)
         self.caption_scan = Text(
-            "Tuning rod shifts cavity resonance",
-            font_size=24, color=GRAY_B,
-        ).to_edge(DOWN)
+            "How does moving the tuning rod effect Resonance?",
+            font_size=24, color=WHITE,
+        ).to_edge(UP)
+        self.what_IDID = Text(
+            "The Script I Helped Write",
+            font_size=24, color=WHITE,
+        ).to_edge(UP)
 
     # ══════════════════════════════════════════════════════════════
     #  SECTIONS
@@ -236,11 +241,12 @@ class Resonance(Scene):
             Create(self.s2), Write(self.s2_label),
             run_time=2,
         )
-        self.play(Create(self.s11_trace), Create(self.s21_trace), run_time=1.5)
-        self.wait(0.5)
+        # self.play(Create(self.s11_trace), Create(self.s21_trace), run_time=1.5)
+        self.wait(7)
 
     def section_off_resonance(self):
-        self.play(Write(self.caption_off))
+        # self.play(Write(self.caption_off))
+        self.play(Transform(self.title, self.caption_off))
         self.pulse_off.move_to(self.s1_start)
         self.add(self.pulse_off)
 
@@ -252,10 +258,12 @@ class Resonance(Scene):
                   run_time=1.2, rate_func=linear)
 
         self.remove(self.pulse_off)
+        self.play(Create(self.s11_trace), Create(self.s21_trace), run_time=1.5)
+        self.wait(0.5)
         self.wait(0.5)
 
     def section_on_resonance(self):
-        self.play(Transform(self.caption_off, self.caption_on))
+        self.play(Transform(self.title, self.caption_on))
         self.pulse_on.move_to(self.s1_start)
         self.add(self.pulse_on)
 
@@ -287,7 +295,7 @@ class Resonance(Scene):
             Transform(self.s11_trace, s11_dipped),
             run_time=1.2,
         )
-        self.wait(2)
+        self.wait(10)
 
     # ══════════════════════════════════════════════════════════════
     #  SCAN PRIMITIVES — small, composable, do one thing
@@ -344,7 +352,7 @@ class Resonance(Scene):
 
     def section_rod_scan(self):
         self.play(
-            Transform(self.caption_off, self.caption_scan),
+            Transform(self.title, self.caption_scan),
             FadeIn(self.rod),
             Write(self.rod_label),
             run_time=1.0,
@@ -373,10 +381,11 @@ class Resonance(Scene):
             self._scan_step(rod_frac, peak_x, amplitude)
             self.wait(0.15)
 
-        self.wait(2)
+        self.wait(5)
 
         # Reset rod to bottom for second pass
         self._move_rod_to(0.0)
+
 
         # ── Build the mode map ──
         mode_map = Rectangle(
@@ -399,9 +408,11 @@ class Resonance(Scene):
         row_spacing = mode_map.height / (n_rows + 1)
 
         # ── Second scan: same plan, this time record each measurement ──
+        self.play(Transform(self.title,self.what_IDID))
+
         for i, (rod_frac, peak_x, amplitude) in enumerate(scan_plan):
             self._scan_step(rod_frac, peak_x, amplitude)
-            self.wait(0.15)
+            self.wait(2)
 
             # Line at the peak's actual position on the trace
             amp_line = Line(
@@ -422,14 +433,14 @@ class Resonance(Scene):
             pixel = Square(
                 side_length=cell_size,
                 stroke_width=0,
-                fill_color=interpolate_color(BLACK, GREEN, brightness),
+                fill_color=interpolate_color(GREEN, YELLOW, brightness),
                 fill_opacity=1.0,
             ).move_to(pixel_pos)
 
-            self.play(Create(amp_line), run_time=0.3)
-            self.play(Transform(amp_line, pixel), run_time=0.5)
+            self.play(Create(amp_line), run_time=2)
+            self.play(Transform(amp_line, pixel), run_time=2)
 
-        self.wait(2)
+        self.wait(4)
 
         # Target pixel on the mode map (0.2 x 0.2, solid green)
    
